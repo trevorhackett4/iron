@@ -2,7 +2,7 @@
 // Shows today's workout, level, XP, and streak
 
 import { useRouter } from "expo-router";
-import { signOut } from "firebase/auth";
+import { onAuthStateChanged, signOut } from "firebase/auth";
 import { doc, getDoc } from "firebase/firestore";
 import React, { useEffect, useState } from "react";
 import { ScrollView, StyleSheet, Text, View } from "react-native";
@@ -20,13 +20,19 @@ export default function HomeScreen() {
   const [userData, setUserData] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
 
-  // Load user data from Firestore
+  // Load user data from Firestore, but wait for auth to be ready first.
+  // Reading auth.currentUser directly at mount can return null briefly while
+  // Firebase rehydrates the session from AsyncStorage — subscribing to
+  // onAuthStateChanged ensures we always get the real auth state.
   useEffect(() => {
-    const loadUserData = async () => {
-      if (!auth.currentUser) return;
+    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+      if (!firebaseUser) {
+        setLoading(false);
+        return;
+      }
 
       try {
-        const userDoc = await getDoc(doc(db, "users", auth.currentUser.uid));
+        const userDoc = await getDoc(doc(db, "users", firebaseUser.uid));
         if (userDoc.exists()) {
           const data = userDoc.data();
           setUserData({
@@ -46,9 +52,9 @@ export default function HomeScreen() {
       } finally {
         setLoading(false);
       }
-    };
+    });
 
-    loadUserData();
+    return unsubscribe;
   }, []);
 
   const handleLogout = async () => {
@@ -65,8 +71,7 @@ export default function HomeScreen() {
   };
 
   const startWorkout = () => {
-    // TODO: Navigate to workout session screen
-    console.log("Start workout pressed");
+    router.push("/(main)/session");
   };
 
   if (loading) {
