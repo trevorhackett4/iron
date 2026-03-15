@@ -28,8 +28,9 @@ Iron is a mobile-first fitness app that acts as your personal strength training 
 iron/
 ├── app/                          # Expo Router screens
 │   ├── (auth)/                   # Authentication screens (login, signup)
-│   ├── (main)/                   # Main app screens (home, coach, session, etc.)
-│   └── _layout.tsx               # Root layout with auth state management
+│   ├── (main)/                   # Main app screens (home, coach, session, test)
+│   ├── _layout.tsx               # Root layout with auth state management
+│   └── index.tsx                 # Root redirect → /(main)/home
 ├── components/                   # Reusable UI components
 │   ├── IronButton.tsx            # GBC-styled button (primary, secondary, danger variants)
 │   ├── XpBar.tsx                 # Animated XP progress bar (Pokémon-style)
@@ -38,9 +39,15 @@ iron/
 │   ├── ChatScreen.tsx            # Complete chat interface with message history
 │   ├── StatDisplay.tsx           # Corner HUD stat boxes (level, streak)
 │   ├── QuestCard.tsx             # Today's workout card (main home CTA)
-│   └── BorderedPanel.tsx         # Generic bordered container
+│   ├── BorderedPanel.tsx         # Generic bordered container
+│   └── session/                  # Session-specific components
+│       ├── index.ts              # Barrel export
+│       ├── ExerciseListItem.tsx  # Bordered exercise row (active/done/idle states)
+│       ├── ActiveSetPanel.tsx    # Main logging panel (set #, +/− reps & weight, LOG SET)
+│       ├── CompletedSetsList.tsx # Chronological log of all sets across all exercises
+│       └── SessionCompletePanel.tsx # Post-workout summary (XP earned, total volume)
 ├── services/                     # External service integrations
-│   └── firebase.ts               # Firebase initialization and exports
+│   └── firebase.ts               # Firebase init with platform-aware auth persistence
 ├── functions/                    # Firebase Cloud Functions
 │   └── src/
 │       └── index.ts              # LLM chat endpoint (Gemini integration)
@@ -70,18 +77,21 @@ Every component is custom-built to maintain authentic GBC aesthetic:
 - **Variants over new components**: IronButton has primary/secondary/danger variants rather than separate components
 - **Composable panels**: BorderedPanel wraps any content with consistent GBC borders
 - **Strict prop interfaces**: All components have explicit TypeScript interfaces for maintainability
+- **Feature subfolders**: Screen-specific components live in `components/<feature>/` (e.g. `components/session/`) to avoid cluttering the top-level components directory
 
 ### State Management
 
 Currently using React hooks (`useState`, `useEffect`) with Firebase real-time listeners:
 
 - Auth state managed in root `_layout.tsx` with `onAuthStateChanged`
-- User data fetched from Firestore on screen mount
+- Home screen subscribes to `onAuthStateChanged` rather than reading `auth.currentUser` directly, ensuring auth is fully rehydrated from AsyncStorage before fetching Firestore data
+- Session state (active exercise, logged reps/weight, completed sets) managed locally in `session.tsx`
 - Chat messages stored in component state (will move to Firestore for persistence)
 
 ### Firebase Architecture
 
 - **Authentication**: Email/password via Firebase Auth (Google Sign-In planned for Phase 3)
+- **Persistence**: `initializeAuth` with `getReactNativePersistence(AsyncStorage)` on native; `getAuth` on web
 - **Database**: Firestore collections: `users`, `workouts`, `goals`, `achievements`
 - **Cloud Functions**: Node.js serverless functions for LLM API calls (keeps API keys secure)
 
@@ -99,14 +109,14 @@ Currently using React hooks (`useState`, `useEffect`) with Firebase real-time li
 1. **Clone the repository**
 
 ```bash
-   git clone https://github.com/trevorhackett4/iron.git
-   cd iron
+git clone https://github.com/trevorhackett4/iron.git
+cd iron
 ```
 
 2. **Install dependencies**
 
 ```bash
-   npm install
+npm install
 ```
 
 3. **Set up environment variables**
@@ -114,45 +124,45 @@ Currently using React hooks (`useState`, `useEffect`) with Firebase real-time li
    Create `.env` in the project root:
 
 ```bash
-   cp .env.example .env
+cp .env.example .env
 ```
 
 Fill in your Firebase config values (get these from Firebase Console → Project Settings):
 
 ```
-   EXPO_PUBLIC_FIREBASE_API_KEY=your_api_key
-   EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN=your_project.firebaseapp.com
-   EXPO_PUBLIC_FIREBASE_PROJECT_ID=your_project_id
-   EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET=your_project.appspot.com
-   EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID=your_sender_id
-   EXPO_PUBLIC_FIREBASE_APP_ID=your_app_id
+EXPO_PUBLIC_FIREBASE_API_KEY=your_api_key
+EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN=your_project.firebaseapp.com
+EXPO_PUBLIC_FIREBASE_PROJECT_ID=your_project_id
+EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET=your_project.appspot.com
+EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID=your_sender_id
+EXPO_PUBLIC_FIREBASE_APP_ID=your_app_id
 ```
 
 4. **Set up Firebase Cloud Functions**
 
 ```bash
-   cd functions
-   npm install
+cd functions
+npm install
 ```
 
 Create `functions/.env`:
 
 ```
-   GEMINI_API_KEY=your_gemini_api_key
+GEMINI_API_KEY=your_gemini_api_key
 ```
 
 5. **Deploy Cloud Functions**
 
 ```bash
-   firebase login
-   firebase deploy --only functions
+firebase login
+firebase deploy --only functions
 ```
 
 6. **Start the app**
 
 ```bash
-   cd ..
-   npx expo start
+cd ..
+npx expo start
 ```
 
 7. **Test on your device**
@@ -197,21 +207,32 @@ firebase deploy --only functions:chat
 - [x] AI Coach chat screen with Gemini integration
 - [x] Cloud Functions for LLM API calls
 
-### 🚧 Phase 2: Core Workout Features (IN PROGRESS)
+### ✅ Phase 2a: Workout Session Screen (COMPLETE)
+
+- [x] **Workout Session Screen**
+  - Exercise list with active/completed/idle states (gold/green/grey borders)
+  - Active set panel: exercise title, set number, +/− reps & weight controls, LOG SET button
+  - Coach notes displayed in blue accent box per exercise
+  - Chronological completed sets log across all exercises (CompletedSetsList)
+  - PR detection on every logged set
+  - XP awarded per set (10 XP) + completion bonus (50 XP)
+  - Session complete panel showing XP earned and total volume
+  - Navigation: QuestCard on home → session, BACK TO HOME → home
+- [x] **Firebase auth persistence** via AsyncStorage (survives app restarts)
+- [x] **Platform-aware auth init** (AsyncStorage on native, localStorage on web)
+- [x] **Auth rehydration fix** in home screen (subscribes to onAuthStateChanged instead of reading currentUser directly)
+
+### 🚧 Phase 2b: Core Workout Features (IN PROGRESS)
 
 - [ ] **Workout Generation Cloud Function**
   - Accept user goals, history, equipment, experience level
   - Call Gemini with structured prompt (system prompt + context window)
   - Return JSON: `{ exercises: [...], strategyNote: string, estimatedDuration: number }`
   - Store generated workouts in Firestore `workouts` collection
-- [ ] **Workout Session Screen**
-  - Display today's workout (fetched from Firestore or generated on-demand)
-  - Show exercises in bordered list items (exercise name, sets, reps, weight)
-  - Active set highlighted with gold border
-  - Input fields for logging actual reps/weight per set
-  - "LOG SET" button (large, gold, bottom of screen)
-  - Completed sets show green checkmark icon
-  - Calculate and award XP on session completion
+- [ ] **Wire session screen to Firestore**
+  - Replace mock session data with real generated workout from Firestore
+  - Save completed session back to Firestore on finish
+  - Update user XP and streak in Firestore on session complete
 - [ ] **Workout History Screen**
   - Quest log style: scrollable list of past workouts
   - Each item shows: date, duration, total volume, XP earned
@@ -222,12 +243,9 @@ firebase deploy --only functions:chat
   - Goals screen: view/edit current goals (strength targets, body comp, timeline)
   - Store in Firestore `goals` collection
   - Pass to LLM for workout generation context
-
 - [ ] **XP & Leveling Logic**
-  - Award XP: 10 per set, 50 per completed workout, 100 for PRs
-  - Detect PRs: compare logged weight/reps to historical max for that exercise
+  - Persist XP to Firestore on session complete
   - Level-up calculation: `xpToNextLevel = level * 100`
-  - Update Firestore `users` document on XP gain
   - Trigger level-up animation when threshold crossed
 
 ### 📅 Phase 3: Intelligence & Engagement
