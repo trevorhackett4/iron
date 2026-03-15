@@ -2,6 +2,10 @@
 
 An AI-powered strength training coach app with a nostalgic Game Boy Color aesthetic. Iron combines modern LLM technology with retro pixel-art design to create a unique, engaging fitness experience.
 
+## Team
+
+Ana and Trevor
+
 ## Overview
 
 Iron is a mobile-first fitness app that acts as your personal strength training coach. It generates personalized workouts, tracks your progress through an RPG-style leveling system, and provides intelligent coaching advice through conversational AI.
