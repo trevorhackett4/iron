@@ -46,3 +46,11 @@ app-example
 # generated native folders
 /ios
 /android
+
+# Claude / AI agent config
+.agents/
+.claude/
+skills-lock.json
+
+# Firebase
+.firebaserc
