@@ -1,7 +1,9 @@
 // session.tsx - Workout Session Screen
 // Checklist-style: all exercises and their sets visible at once.
-// User taps a set row to mark it done. When all sets across all exercises
-// are checked, the session complete panel appears.
+//
+// Editing:
+//   • EDIT button in exercise header → modal → applies overrides to ALL sets
+//   • Tap individual set value → native keyboard → applies to JUST that set
 //
 // TODO Phase 2: Replace MOCK_SESSION with a Firestore fetch.
 // TODO Phase 2: Persist completed session to Firestore on finish.
@@ -13,6 +15,7 @@ import {
     ExerciseListItem,
     SessionCompletePanel,
 } from "../../components/session";
+import { SetOverride } from "../../components/session/ExerciseListItem";
 import {
     BorderWidth,
     Colors,
@@ -77,8 +80,8 @@ const MOCK_SESSION: WorkoutSession = {
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-// checkedSets maps exerciseId → Set of checked set numbers (1-indexed)
 type CheckedSetsMap = Record<string, Set<number>>;
+type SetOverridesMap = Record<string, Record<number, SetOverride>>;
 
 // ─── SessionScreen ────────────────────────────────────────────────────────────
 
@@ -86,11 +89,14 @@ export default function SessionScreen() {
   const router = useRouter();
   const [session] = useState<WorkoutSession>(MOCK_SESSION);
 
-  // Initialize: every exercise starts with an empty set of checked sets
   const [checkedSets, setCheckedSets] = useState<CheckedSetsMap>(() =>
     Object.fromEntries(
       session.exercises.map((ex) => [ex.id, new Set<number>()]),
     ),
+  );
+
+  const [setOverrides, setSetOverrides] = useState<SetOverridesMap>(() =>
+    Object.fromEntries(session.exercises.map((ex) => [ex.id, {}])),
   );
 
   const [sessionComplete, setSessionComplete] = useState(false);
@@ -108,10 +114,16 @@ export default function SessionScreen() {
     totalChecked * XP_PER_SET +
     (sessionComplete ? XP_PER_COMPLETED_WORKOUT : 0);
 
-  // Total volume: sum of (reps × weight) for every checked set
   const totalVolume = session.exercises.reduce((sum, ex) => {
-    const checked = checkedSets[ex.id]?.size ?? 0;
-    return sum + checked * ex.reps * (ex.weight ?? 0);
+    const overrides = setOverrides[ex.id] ?? {};
+    const checked = checkedSets[ex.id] ?? new Set<number>();
+    let exVolume = 0;
+    checked.forEach((setNumber) => {
+      const reps = overrides[setNumber]?.reps ?? ex.reps;
+      const weight = overrides[setNumber]?.weight ?? ex.weight ?? 0;
+      exVolume += reps * weight;
+    });
+    return sum + exVolume;
   }, 0);
 
   // ── Handlers ──
@@ -127,16 +139,45 @@ export default function SessionScreen() {
 
       const next = { ...prev, [exerciseId]: updated };
 
-      // Check if every set across every exercise is now checked
       const allDone = session.exercises.every(
         (ex) => (next[ex.id]?.size ?? 0) >= ex.sets,
       );
       if (allDone) {
-        // Defer state update to avoid updating two states in the same render
         setTimeout(() => setSessionComplete(true), 300);
       }
 
       return next;
+    });
+  };
+
+  // Individual set tap — applies to just that one set
+  const handleEditSet = (
+    exerciseId: string,
+    setNumber: number,
+    field: keyof SetOverride,
+    value: number,
+  ) => {
+    setSetOverrides((prev) => {
+      const exOverrides = { ...prev[exerciseId] };
+      exOverrides[setNumber] = {
+        ...(exOverrides[setNumber] ?? {}),
+        [field]: value,
+      };
+      return { ...prev, [exerciseId]: exOverrides };
+    });
+  };
+
+  // Header EDIT button — applies overrides to every set of the exercise
+  const handleEditAllSets = (exerciseId: string, overrides: SetOverride) => {
+    const exercise = session.exercises.find((ex) => ex.id === exerciseId);
+    if (!exercise) return;
+
+    setSetOverrides((prev) => {
+      const exOverrides = { ...prev[exerciseId] };
+      for (let i = 1; i <= exercise.sets; i++) {
+        exOverrides[i] = { ...(exOverrides[i] ?? {}), ...overrides };
+      }
+      return { ...prev, [exerciseId]: exOverrides };
     });
   };
 
@@ -166,6 +207,7 @@ export default function SessionScreen() {
         style={styles.scroll}
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
       >
         {/* ── Header ── */}
         <View style={styles.headerLabel}>
@@ -183,7 +225,14 @@ export default function SessionScreen() {
             key={exercise.id}
             exercise={exercise}
             checkedSets={checkedSets[exercise.id] ?? new Set()}
+            setOverrides={setOverrides[exercise.id] ?? {}}
             onToggleSet={(setNumber) => handleToggleSet(exercise.id, setNumber)}
+            onEditSet={(setNumber, field, value) =>
+              handleEditSet(exercise.id, setNumber, field, value)
+            }
+            onEditAllSets={(overrides) =>
+              handleEditAllSets(exercise.id, overrides)
+            }
           />
         ))}
       </ScrollView>
