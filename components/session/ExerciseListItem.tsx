@@ -234,9 +234,6 @@ function SetRow({
           value={restSeconds}
           suffix="s rest"
           isDone={isDone}
-          formatDisplay={(v) =>
-            v >= 60 ? `${Math.floor(v / 60)}m rest` : `${v}s rest`
-          }
           onCommit={(v) => onEdit("restSeconds", v)}
         />
       </View>
