@@ -58,12 +58,6 @@ export default function SignupScreen() {
       await setDoc(doc(db, "users", user.uid), {
         email: user.email,
         createdAt: new Date(),
-        level: 1,
-        xp: 0,
-        streak: 0,
-        experienceLevel: "beginner",
-        availableEquipment: [],
-        preferredUnits: "lbs",
       });
 
       console.log("Signup successful!");

@@ -1,7 +1,6 @@
-// ExerciseListItem - A single exercise row in the workout plan list.
-// Styled like Pokémon's item list — bordered box with zebra striping.
-// Shows completion state (checkmark), active state (gold border + arrow),
-// and progress (X/Y sets counter).
+// ExerciseListItem - Exercise section header with its planned sets listed below.
+// No expand/collapse — all sets are always visible.
+// Each set row has a checkbox; tapping it dims the row and shows a green checkmark.
 
 import React from "react";
 import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
@@ -10,151 +9,334 @@ import { Exercise } from "../../types";
 
 interface ExerciseListItemProps {
   exercise: Exercise;
-  isActive: boolean; // Currently selected for logging
-  completedSetCount: number; // How many sets have been logged
-  onPress: () => void;
+  checkedSets: Set<number>; // Which set numbers (1-indexed) have been checked off
+  onToggleSet: (setNumber: number) => void;
 }
 
 export default function ExerciseListItem({
   exercise,
-  isActive,
-  completedSetCount,
-  onPress,
+  checkedSets,
+  onToggleSet,
 }: ExerciseListItemProps) {
-  const isFullyDone = completedSetCount >= exercise.sets;
+  const allDone = checkedSets.size >= exercise.sets;
 
-  // Inner border color encodes state: gold = active, green = done, mid = idle
-  const innerBorderColor = isActive
-    ? Colors.gb.gold
-    : isFullyDone
-      ? Colors.gb.green
-      : Colors.gb.mid;
+  // Build an array of set numbers [1, 2, 3, ...]
+  const setNumbers = Array.from({ length: exercise.sets }, (_, i) => i + 1);
+
+  return (
+    <View style={styles.container}>
+      {/* ── Exercise header ── */}
+      <View style={[styles.header, allDone && styles.headerDone]}>
+        <View style={styles.headerLeft}>
+          <Text
+            style={[styles.exerciseName, allDone && styles.exerciseNameDone]}
+            allowFontScaling={false}
+          >
+            {exercise.name.toUpperCase()}
+          </Text>
+          <Text style={styles.exerciseMeta} allowFontScaling={false}>
+            {exercise.sets} sets · {exercise.category.toUpperCase()}
+          </Text>
+        </View>
+
+        {/* Progress counter */}
+        <Text
+          style={[styles.progress, allDone && styles.progressDone]}
+          allowFontScaling={false}
+        >
+          {allDone ? "✓ DONE" : `${checkedSets.size}/${exercise.sets}`}
+        </Text>
+      </View>
+
+      {/* ── Set rows ── */}
+      <View style={styles.setsContainer}>
+        {setNumbers.map((setNumber) => {
+          const isDone = checkedSets.has(setNumber);
+          return (
+            <SetRow
+              key={setNumber}
+              setNumber={setNumber}
+              reps={exercise.reps}
+              weight={exercise.weight}
+              restSeconds={exercise.restSeconds}
+              isDone={isDone}
+              onToggle={() => onToggleSet(setNumber)}
+              isLast={setNumber === exercise.sets}
+            />
+          );
+        })}
+
+        {/* Coach note — shown below all sets if present */}
+        {exercise.notes ? (
+          <View style={styles.coachNote}>
+            <Text style={styles.coachNoteText} allowFontScaling={false}>
+              ▸ {exercise.notes}
+            </Text>
+          </View>
+        ) : null}
+      </View>
+    </View>
+  );
+}
+
+// ─── SetRow ───────────────────────────────────────────────────────────────────
+
+interface SetRowProps {
+  setNumber: number;
+  reps: number;
+  weight?: number;
+  restSeconds: number;
+  isDone: boolean;
+  onToggle: () => void;
+  isLast: boolean;
+}
+
+function SetRow({
+  setNumber,
+  reps,
+  weight,
+  restSeconds,
+  isDone,
+  onToggle,
+  isLast,
+}: SetRowProps) {
+  const restLabel =
+    restSeconds >= 60
+      ? `${Math.floor(restSeconds / 60)}m rest`
+      : `${restSeconds}s rest`;
 
   return (
     <TouchableOpacity
-      onPress={onPress}
-      activeOpacity={0.8}
-      disabled={isFullyDone} // Completed exercises aren't tappable
+      onPress={onToggle}
+      activeOpacity={0.7}
+      style={[
+        styles.setRow,
+        !isLast && styles.setRowBorder,
+        isDone && styles.setRowDone,
+      ]}
     >
-      {/* Outer black border */}
-      <View style={styles.outer}>
-        {/* Inner colored border — encodes state */}
-        <View style={[styles.inner, { borderColor: innerBorderColor }]}>
-          <View style={styles.content}>
-            {/* Left: checkmark (done) or X/Y counter (in progress) */}
-            <View style={styles.statusBox}>
-              {isFullyDone ? (
-                <Text style={styles.checkmark} allowFontScaling={false}>
-                  ✓
-                </Text>
-              ) : (
-                <Text style={styles.setCounter} allowFontScaling={false}>
-                  {completedSetCount}/{exercise.sets}
-                </Text>
-              )}
-            </View>
+      {/* Checkbox */}
+      <View style={[styles.checkbox, isDone && styles.checkboxDone]}>
+        {isDone && (
+          <Text style={styles.checkmark} allowFontScaling={false}>
+            ✓
+          </Text>
+        )}
+      </View>
 
-            {/* Center: exercise name + target */}
-            <View style={styles.info}>
-              <Text
-                style={[
-                  styles.name,
-                  isActive && styles.nameActive,
-                  isFullyDone && styles.nameDone,
-                ]}
-                allowFontScaling={false}
-              >
-                {exercise.name.toUpperCase()}
-              </Text>
-              <Text style={styles.meta} allowFontScaling={false}>
-                {exercise.sets} × {exercise.reps} @ {exercise.weight} lbs
-              </Text>
-            </View>
+      {/* Set label */}
+      <Text
+        style={[styles.setLabel, isDone && styles.setLabelDone]}
+        allowFontScaling={false}
+      >
+        SET {setNumber}
+      </Text>
 
-            {/* Right: active indicator arrow */}
-            {isActive && (
-              <Text style={styles.arrow} allowFontScaling={false}>
-                ▶
-              </Text>
-            )}
-          </View>
-        </View>
+      {/* Set details */}
+      <View style={styles.setDetails}>
+        <Text
+          style={[styles.setDetail, isDone && styles.setDetailDone]}
+          allowFontScaling={false}
+        >
+          {reps} reps
+        </Text>
+        {weight !== undefined && weight > 0 && (
+          <>
+            <Text
+              style={[styles.detailDot, isDone && styles.setDetailDone]}
+              allowFontScaling={false}
+            >
+              ·
+            </Text>
+            <Text
+              style={[styles.setDetail, isDone && styles.setDetailDone]}
+              allowFontScaling={false}
+            >
+              {weight} lbs
+            </Text>
+          </>
+        )}
+        <Text
+          style={[styles.detailDot, isDone && styles.setDetailDone]}
+          allowFontScaling={false}
+        >
+          ·
+        </Text>
+        <Text
+          style={[styles.setDetail, isDone && styles.setDetailDone]}
+          allowFontScaling={false}
+        >
+          {restLabel}
+        </Text>
       </View>
     </TouchableOpacity>
   );
 }
 
+// ─── Styles ───────────────────────────────────────────────────────────────────
+
 const styles = StyleSheet.create({
-  outer: {
+  container: {
     borderWidth: BorderWidth.thick,
     borderColor: Colors.gb.black,
+    borderRadius: 0,
+    overflow: "hidden",
+    marginBottom: Spacing.sm,
+  },
+
+  // ── Header ──
+  header: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    backgroundColor: Colors.gb.lightest,
+    borderBottomWidth: BorderWidth.thin,
+    borderBottomColor: Colors.gb.black,
+    paddingVertical: Spacing.sm,
+    paddingHorizontal: Spacing.md,
+    minHeight: 48,
+  },
+
+  headerDone: {
+    backgroundColor: Colors.gb.mid,
+  },
+
+  headerLeft: {
+    flex: 1,
+    gap: 2,
+  },
+
+  exerciseName: {
+    fontSize: FontSize.sm,
+    fontWeight: "bold",
+    color: Colors.gb.black,
+    letterSpacing: 0.5,
+  },
+
+  exerciseNameDone: {
+    color: Colors.gb.dark,
+  },
+
+  exerciseMeta: {
+    fontSize: FontSize.xs,
+    color: Colors.gb.mid,
+    letterSpacing: 0.5,
+  },
+
+  progress: {
+    fontSize: FontSize.xs,
+    fontWeight: "bold",
+    color: Colors.gb.mid,
+    letterSpacing: 1,
+    marginLeft: Spacing.md,
+  },
+
+  progressDone: {
+    color: Colors.gb.green,
+  },
+
+  // ── Sets container ──
+  setsContainer: {
     backgroundColor: Colors.gb.dark,
-    marginBottom: Spacing.xs,
-    padding: BorderWidth.thin,
-    borderRadius: 0,
   },
 
-  inner: {
-    borderWidth: BorderWidth.thin,
-    borderRadius: 0,
-  },
-
-  content: {
+  // ── Set row ──
+  setRow: {
     flexDirection: "row",
     alignItems: "center",
     paddingVertical: Spacing.sm,
     paddingHorizontal: Spacing.md,
-    minHeight: 64,
+    minHeight: 48,
+    gap: Spacing.sm,
+    backgroundColor: Colors.gb.dark,
   },
 
-  statusBox: {
-    width: 32,
+  setRowBorder: {
+    borderBottomWidth: BorderWidth.thin,
+    borderBottomColor: Colors.gb.black,
+  },
+
+  setRowDone: {
+    backgroundColor: Colors.gb.darkest,
+    opacity: 0.6,
+  },
+
+  // ── Checkbox ──
+  checkbox: {
+    width: 24,
+    height: 24,
+    borderWidth: BorderWidth.thin,
+    borderColor: Colors.gb.mid,
+    backgroundColor: Colors.gb.darkest,
     alignItems: "center",
-    marginRight: Spacing.sm,
+    justifyContent: "center",
+    borderRadius: 0,
+    flexShrink: 0,
+  },
+
+  checkboxDone: {
+    borderColor: Colors.gb.green,
+    backgroundColor: Colors.gb.darkest,
   },
 
   checkmark: {
-    fontSize: FontSize.lg,
+    fontSize: FontSize.xs,
     color: Colors.gb.green,
     fontWeight: "bold",
+    lineHeight: FontSize.xs + 2,
   },
 
-  setCounter: {
+  // ── Set label ──
+  setLabel: {
     fontSize: FontSize.xs,
-    color: Colors.gb.mid,
     fontWeight: "bold",
-    letterSpacing: 0.5,
+    color: Colors.gb.light,
+    letterSpacing: 1,
+    width: 40,
+    flexShrink: 0,
   },
 
-  info: {
+  setLabelDone: {
+    color: Colors.gb.mid,
+  },
+
+  // ── Set details ──
+  setDetails: {
     flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    flexWrap: "wrap",
     gap: 4,
   },
 
-  name: {
+  setDetail: {
     fontSize: FontSize.sm,
-    fontWeight: "bold",
     color: Colors.gb.lightest,
     letterSpacing: 0.5,
   },
 
-  nameActive: {
-    color: Colors.gb.gold,
-  },
-
-  nameDone: {
-    color: Colors.gb.light,
-  },
-
-  meta: {
-    fontSize: FontSize.xs,
+  setDetailDone: {
     color: Colors.gb.mid,
-    letterSpacing: 0.5,
   },
 
-  arrow: {
+  detailDot: {
     fontSize: FontSize.sm,
-    color: Colors.gb.gold,
-    marginLeft: Spacing.sm,
+    color: Colors.gb.mid,
+  },
+
+  // ── Coach note ──
+  coachNote: {
+    borderTopWidth: BorderWidth.thin,
+    borderTopColor: Colors.gb.black,
+    backgroundColor: Colors.gb.darkest,
+    paddingVertical: Spacing.sm,
+    paddingHorizontal: Spacing.md,
+  },
+
+  coachNoteText: {
+    fontSize: FontSize.xs,
+    color: Colors.gb.blue,
+    letterSpacing: 0.5,
+    lineHeight: FontSize.xs * 1.6,
   },
 });

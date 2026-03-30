@@ -1,16 +1,15 @@
 // session.tsx - Workout Session Screen
-// This file is pure orchestration: state management and layout only.
-// All visual components live in components/session/.
+// Checklist-style: all exercises and their sets visible at once.
+// User taps a set row to mark it done. When all sets across all exercises
+// are checked, the session complete panel appears.
 //
 // TODO Phase 2: Replace MOCK_SESSION with a Firestore fetch.
-// TODO Phase 2: Replace handleFinish console.log with router.replace("/(main)/home").
+// TODO Phase 2: Persist completed session to Firestore on finish.
 
 import { useRouter } from "expo-router";
 import React, { useState } from "react";
 import { ScrollView, StyleSheet, Text, View } from "react-native";
 import {
-    ActiveSetPanel,
-    CompletedSetsList,
     ExerciseListItem,
     SessionCompletePanel,
 } from "../../components/session";
@@ -22,10 +21,9 @@ import {
     XP_PER_COMPLETED_WORKOUT,
     XP_PER_SET,
 } from "../../constants/theme";
-import { CompletedSet, Exercise, WorkoutSession } from "../../types";
+import { Exercise, WorkoutSession } from "../../types";
 
 // ─── Mock Data ────────────────────────────────────────────────────────────────
-// Replace with a Firestore fetch in Phase 2.
 
 const MOCK_SESSION: WorkoutSession = {
   id: "session-001",
@@ -77,108 +75,76 @@ const MOCK_SESSION: WorkoutSession = {
   xpEarned: 0,
 };
 
+// ─── Types ────────────────────────────────────────────────────────────────────
+
+// checkedSets maps exerciseId → Set of checked set numbers (1-indexed)
+type CheckedSetsMap = Record<string, Set<number>>;
+
 // ─── SessionScreen ────────────────────────────────────────────────────────────
 
 export default function SessionScreen() {
   const router = useRouter();
-  const [session, setSession] = useState<WorkoutSession>(MOCK_SESSION);
-  const [activeExerciseIndex, setActiveExerciseIndex] = useState(0);
-  const [loggedReps, setLoggedReps] = useState(MOCK_SESSION.exercises[0].reps);
-  const [loggedWeight, setLoggedWeight] = useState(
-    MOCK_SESSION.exercises[0].weight ?? 0,
-  );
-  const [sessionComplete, setSessionComplete] = useState(false);
-  const [totalXpEarned, setTotalXpEarned] = useState(0);
-  const [totalVolume, setTotalVolume] = useState(0);
+  const [session] = useState<WorkoutSession>(MOCK_SESSION);
 
-  const activeExercise = session.exercises[activeExerciseIndex];
-  const currentSetNumber =
-    (session.completedSets[activeExercise.id] ?? []).length + 1;
+  // Initialize: every exercise starts with an empty set of checked sets
+  const [checkedSets, setCheckedSets] = useState<CheckedSetsMap>(() =>
+    Object.fromEntries(
+      session.exercises.map((ex) => [ex.id, new Set<number>()]),
+    ),
+  );
+
+  const [sessionComplete, setSessionComplete] = useState(false);
+
+  // ── Derived values ──
+
+  const totalSets = session.exercises.reduce((sum, ex) => sum + ex.sets, 0);
+
+  const totalChecked = Object.values(checkedSets).reduce(
+    (sum, s) => sum + s.size,
+    0,
+  );
+
+  const totalXpEarned =
+    totalChecked * XP_PER_SET +
+    (sessionComplete ? XP_PER_COMPLETED_WORKOUT : 0);
+
+  // Total volume: sum of (reps × weight) for every checked set
+  const totalVolume = session.exercises.reduce((sum, ex) => {
+    const checked = checkedSets[ex.id]?.size ?? 0;
+    return sum + checked * ex.reps * (ex.weight ?? 0);
+  }, 0);
 
   // ── Handlers ──
 
-  const handleRepsChange = (delta: number) => {
-    setLoggedReps((prev) => Math.max(1, prev + delta));
-  };
-
-  const handleWeightChange = (delta: number) => {
-    setLoggedWeight((prev) => Math.max(0, prev + delta));
-  };
-
-  // Tapping an exercise row in the list switches the active panel to it,
-  // unless it's already fully completed.
-  const handleSelectExercise = (index: number) => {
-    const ex = session.exercises[index];
-    const alreadyDone = (session.completedSets[ex.id] ?? []).length;
-    if (alreadyDone < ex.sets) {
-      setActiveExerciseIndex(index);
-      setLoggedReps(ex.reps);
-      setLoggedWeight(ex.weight ?? 0);
-    }
-  };
-
-  const handleLogSet = () => {
-    const exerciseId = activeExercise.id;
-    const existing: CompletedSet[] = session.completedSets[exerciseId] ?? [];
-
-    // PR detection: first set for this exercise is always a PR;
-    // subsequent sets are a PR only if the weight exceeds the previous best.
-    const previousBest = existing.reduce(
-      (best, s) => Math.max(best, s.weight),
-      0,
-    );
-    const isPR =
-      existing.length === 0 ? loggedWeight > 0 : loggedWeight > previousBest;
-
-    const newSet: CompletedSet = {
-      setNumber: existing.length + 1,
-      reps: loggedReps,
-      weight: loggedWeight,
-      timestamp: new Date(),
-      isPR,
-    };
-
-    const updatedSets = [...existing, newSet];
-    const updatedCompletedSets = {
-      ...session.completedSets,
-      [exerciseId]: updatedSets,
-    };
-
-    setSession((prev) => ({ ...prev, completedSets: updatedCompletedSets }));
-    setTotalVolume((v) => v + loggedReps * loggedWeight);
-    setTotalXpEarned((x) => x + XP_PER_SET);
-
-    // If this exercise is now fully done, advance to the next incomplete one.
-    if (updatedSets.length >= activeExercise.sets) {
-      const nextIndex = session.exercises.findIndex((ex, i) => {
-        if (i <= activeExerciseIndex) return false;
-        return (updatedCompletedSets[ex.id] ?? []).length < ex.sets;
-      });
-
-      if (nextIndex !== -1) {
-        setActiveExerciseIndex(nextIndex);
-        setLoggedReps(session.exercises[nextIndex].reps);
-        setLoggedWeight(session.exercises[nextIndex].weight ?? 0);
+  const handleToggleSet = (exerciseId: string, setNumber: number) => {
+    setCheckedSets((prev) => {
+      const updated = new Set(prev[exerciseId]);
+      if (updated.has(setNumber)) {
+        updated.delete(setNumber);
       } else {
-        // All exercises done — award completion bonus and show summary.
-        setTotalXpEarned((x) => x + XP_PER_COMPLETED_WORKOUT);
-        setSessionComplete(true);
+        updated.add(setNumber);
       }
-    }
+
+      const next = { ...prev, [exerciseId]: updated };
+
+      // Check if every set across every exercise is now checked
+      const allDone = session.exercises.every(
+        (ex) => (next[ex.id]?.size ?? 0) >= ex.sets,
+      );
+      if (allDone) {
+        // Defer state update to avoid updating two states in the same render
+        setTimeout(() => setSessionComplete(true), 300);
+      }
+
+      return next;
+    });
   };
 
   const handleFinish = () => {
-    // TODO Phase 2: router.replace("/(main)/home");
-    console.log(
-      "Session finished — XP:",
-      totalXpEarned,
-      "Volume:",
-      totalVolume,
-    );
     router.replace("/(main)/home");
   };
 
-  // ── Render ──
+  // ── Render: session complete ──
 
   if (sessionComplete) {
     return (
@@ -192,52 +158,34 @@ export default function SessionScreen() {
     );
   }
 
+  // ── Render: active session ──
+
   return (
     <View style={styles.screen}>
       <ScrollView
         style={styles.scroll}
         contentContainerStyle={styles.scrollContent}
-        keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >
-        {/* ── Exercise list ── */}
-        <View style={styles.section}>
-          <View style={styles.sectionLabel}>
-            <Text style={styles.sectionLabelText} allowFontScaling={false}>
-              WORKOUT PLAN
-            </Text>
-          </View>
-
-          {session.exercises.map((exercise: Exercise, index: number) => {
-            const done = (session.completedSets[exercise.id] ?? []).length;
-            return (
-              <ExerciseListItem
-                key={exercise.id}
-                exercise={exercise}
-                isActive={index === activeExerciseIndex}
-                completedSetCount={done}
-                onPress={() => handleSelectExercise(index)}
-              />
-            );
-          })}
+        {/* ── Header ── */}
+        <View style={styles.headerLabel}>
+          <Text style={styles.headerLabelText} allowFontScaling={false}>
+            WORKOUT PLAN
+          </Text>
+          <Text style={styles.headerProgress} allowFontScaling={false}>
+            {totalChecked}/{totalSets} SETS
+          </Text>
         </View>
 
-        {/* ── Active set panel ── */}
-        <ActiveSetPanel
-          exercise={activeExercise}
-          currentSetNumber={currentSetNumber}
-          loggedReps={loggedReps}
-          loggedWeight={loggedWeight}
-          onRepsChange={handleRepsChange}
-          onWeightChange={handleWeightChange}
-          onLogSet={handleLogSet}
-        />
-
-        {/* ── Unified completed sets log ── */}
-        <CompletedSetsList
-          exercises={session.exercises}
-          completedSets={session.completedSets}
-        />
+        {/* ── Exercise list ── */}
+        {session.exercises.map((exercise: Exercise) => (
+          <ExerciseListItem
+            key={exercise.id}
+            exercise={exercise}
+            checkedSets={checkedSets[exercise.id] ?? new Set()}
+            onToggleSet={(setNumber) => handleToggleSet(exercise.id, setNumber)}
+          />
+        ))}
       </ScrollView>
     </View>
   );
@@ -257,30 +205,34 @@ const styles = StyleSheet.create({
 
   scrollContent: {
     padding: Spacing.md,
-    gap: Spacing.md,
+    gap: Spacing.xs,
     paddingBottom: Spacing.xxl,
   },
 
-  section: {
-    gap: Spacing.xs,
-  },
-
-  // "WORKOUT PLAN" label box — white box with black border, like Pokémon labels
-  sectionLabel: {
+  headerLabel: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
     borderWidth: BorderWidth.thickest,
     borderColor: Colors.gb.black,
     backgroundColor: Colors.gb.lightest,
-    alignSelf: "flex-start",
-    paddingVertical: Spacing.xs,
+    paddingVertical: Spacing.sm,
     paddingHorizontal: Spacing.md,
-    marginBottom: Spacing.sm,
+    marginBottom: Spacing.md,
     borderRadius: 0,
   },
 
-  sectionLabelText: {
+  headerLabelText: {
     fontSize: FontSize.sm,
     fontWeight: "bold",
     color: Colors.gb.black,
+    letterSpacing: 1,
+  },
+
+  headerProgress: {
+    fontSize: FontSize.xs,
+    fontWeight: "bold",
+    color: Colors.gb.mid,
     letterSpacing: 1,
   },
 });
